@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <link rel="stylesheet" href="https://openlayers.org/en/v4.6.5/css/ol.css" rel="external nofollow" type="text/css">
+    <!-- The line below is only needed for old environments like Internet Explorer and Android 4.x -->
+    <script src="https://cdn.polyfill.io/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL"></script>
+    <script src="https://openlayers.org/en/v4.6.5/build/ol.js"></script>
+</head>
+<body style="margin: 0;padding: 0">
+<div id="map" style="width: 100%;height: 100vh;background: #f1f2f3"></div>
+</body>
+<script>
+    //以openlayers为例
+    //省图层
+    var provinceLayer = new ol.layer.Vector({
+        title: 'add Layer',
+        source: new ol.source.Vector({
+            projection: 'EPSG:4326',
+            url: 'geojson/sd_province.json',
+            format: new ol.format.GeoJSON(),
+        }),
+        style: new ol.style.Style({
+            stroke: new ol.style.Stroke({
+                color: '#FF671D',
+                width: 3
+            })
+        }),
+        zIndex: 3
+    });
+    //初始化地图
+    let map = new ol.Map({
+        //地图默认显示控件设置
+        controls: ol.control.defaults({attribution: false, zoom: true, rotate: false}).extend([
+            // new ol.control.MousePosition()
+        ]),
+        target: 'map',
+        view: new ol.View({
+            center: ol.proj.transform([118.995, 36.32], 'EPSG:4326', 'EPSG:3857'),//转换经纬度为墨卡托坐标
+            zoom: 8, //默认缩放大小
+            projection: "EPSG:3857" //指定坐标系为墨卡托
+        }),
+        layers: [provinceLayer] //默认叠加的图层
+    });
+
+    //风向杆图标绘制，参数为统一变量控制的大小，风速，颜色
+    function drawArrow(TILE_SIZE, speed, color) {
+        var canvas = document.createElement('canvas');
+        canvas.width = 50;
+        canvas.height = 20;
+        var ctx = canvas.getContext("2d");
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 1)
+        ctx.fillStyle = color //旗帜填充颜色
+        ctx.strokeStyle = "#333" //为0时候圆圈颜色
+        ctx.lineWidth = 1.5 //绘制宽度
+        // no wind
+        if (speed === 0) {
+            // ctx.beginPath()
+            // ctx.arc(0, 0, TILE_SIZE / 2 + 1, 0, 2 * Math.PI, false)
+            // ctx.closePath()
+            // ctx.stroke()
+            return canvas
+        }
+        //线的长度
+        var length = TILE_SIZE * 2;
+        var dx = TILE_SIZE / 3;
+        var dy = TILE_SIZE;
+        var numTriangles = Math.floor((speed + 1) / 20);
+        var numLines = Math.floor((speed + 1) / 4); //根据等级决定横线数量
+        var half = (speed - (numLines * 4)) > 1; //根据等级决定是否有半截线的情况
+        ctx.save()
+        if (numTriangles > 0) {
+            numLines = Math.floor(((speed + 1) - numTriangles * 20) / 4);
+            half = ((speed - numTriangles * 20) - (numLines * 4)) > 1;
+        }
+        // ctx.rotate(Math.PI * (direction - 90) / 180)
+
+        // direction line
+        ctx.strokeStyle = color //风杆颜色
+        ctx.beginPath()
+        ctx.moveTo(0, 0)
+        ctx.lineTo(length, 0)
+        ctx.closePath()
+        ctx.stroke()
+        ctx.strokeStyle = color //横线颜色
+
+        // triangular feathers
+        var fx = length // feather x coordinate
+        for (var i = 0; i < numTriangles; i++) {
+            ctx.beginPath()
+            ctx.moveTo(fx, 0)
+            ctx.lineTo(fx, dy)
+            ctx.lineTo(fx - dx - 2, 0) //调整旗帜大小
+            ctx.closePath()
+            ctx.fill()
+            fx -= dx
+        }
+        if (numTriangles > 0) fx -= dx
+
+        // line feathers
+        ctx.beginPath()
+        for (var i = 0; i < numLines; i++) {
+            ctx.moveTo(fx, 0)
+            ctx.lineTo(fx + dx, dy)
+            fx -= dx
+        }
+
+        if (half) {
+            ctx.moveTo(fx, 0)
+            ctx.lineTo(fx + dx / 2, dy / 2)
+        }
+        ctx.closePath()
+        ctx.stroke()
+
+        ctx.restore()
+        return canvas
+    }
+
+    //点叠加
+    let featurePoint = [], featureWinds = [];
+    //模拟数据
+    let datas=[
+        {
+            lon:118.995,
+            lat:36.32,
+            value:9.8,
+            direc:15.9
+        },
+        {
+            lon:117.995,
+            lat:36.32,
+            value:20.8,
+            direc:85.9
+        },
+        {
+            lon:118.995,
+            lat:35.32,
+            value:13.9,
+            direc:65
+        }
+    ]
+    datas.forEach(function (obj,i) {
+        let point = new ol.geom.Point([obj.lon,obj.lat]);
+        point.applyTransform(ol.proj.getTransform('EPSG:4326', 'EPSG:3857'));
+        featurePoint[i] = new ol.Feature({
+            geometry: point,
+        });
+        featurePoint[i].setStyle(new ol.style.Style({
+            image: new ol.style.Circle({
+                fill: new ol.style.Fill({
+                    color: '#E8AE02'
+                }),
+                stroke: new ol.style.Stroke({
+                    color: '#333',
+                    width: 1
+                }),
+                radius: 4
+            })
+        }));
+        featureWinds[i] = new ol.Feature({
+            geometry: point
+        });
+        featureWinds[i].setStyle(new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [-3, 1],
+                anchorXUnits: 'pixels',
+                anchorYUnits: 'pixels',
+                imgSize: [50, 20],
+                img: drawArrow(15, obj.value, 'red'),//大小、风速、颜色
+                rotation: (obj.direc * Math.PI / 180) - (90 * Math.PI / 180)//风向，必须减掉90
+            })
+        }))
+    })
+    let sourceA = new ol.source.Vector({
+        features: featurePoint
+    });
+    var staPointLayer = new ol.layer.Vector({
+        source: sourceA,
+        zIndex: 123
+    });
+    let sourceB = new ol.source.Vector({
+        features: featureWinds
+    });
+    var windLayer = new ol.layer.Vector({
+        source: sourceB,
+        zIndex: 123
+    });
+    map.addLayer(staPointLayer);
+    map.addLayer(windLayer);
+</script>
+</html>
